@@ -21,14 +21,24 @@ class OMSAuth:
     Clase para manejar la autenticación con el servidor OMS.
     """
     
-    def __init__(self, auth_url: str = 'https://api.lbo.xoms.com.ar/auth/getToken'):
+    def __init__(self, auth_url: Optional[str] = None):
         """
         Inicializa el cliente de autenticación.
         
         Args:
-            auth_url: URL del endpoint de autenticación.
+            auth_url: URL del endpoint de autenticación (opcional, se construye desde OMS_HOST si no se proporciona).
         """
-        self.auth_url = auth_url
+        # Obtener host del .env
+        oms_host = os.getenv('OMS_HOST', 'oms_host')
+        
+        # Construir URL de autenticación
+        if auth_url:
+            self.auth_url = auth_url
+        else:
+            # Asegurar que el host no tenga protocolo
+            oms_host = oms_host.replace('https://', '').replace('http://', '').replace('wss://', '').replace('ws://', '')
+            self.auth_url = f'https://{oms_host}/auth/getToken'
+        
         self.token: Optional[str] = None
         self.logger = logging.getLogger(__name__)
         

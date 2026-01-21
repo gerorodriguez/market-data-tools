@@ -5,11 +5,20 @@ para enviar mensajes al servidor OMS.
 """
 import asyncio
 import logging
+import os
 from typing import Dict, Any, List, Optional
+from dotenv import load_dotenv
+import pathlib
 
 from oms_websocket_connector import OMSWebSocketConnector
 from oms_auth import OMSAuth
 from market_data_store import MarketDataStore
+
+# Cargar variables de entorno desde .env
+script_dir = pathlib.Path(__file__).parent.absolute()
+env_path = script_dir / '.env'
+load_dotenv(dotenv_path=env_path)
+load_dotenv()
 
 
 class OMSClient:
@@ -17,15 +26,24 @@ class OMSClient:
     Cliente para interactuar con el servidor OMS mediante WebSocket.
     """
 
-    def __init__(self, url: str = 'wss://api.lbo.xoms.com.ar', data_store_path: str = 'market_data.csv'):
+    def __init__(self, url: Optional[str] = None, data_store_path: str = 'market_data.csv'):
         """
         Inicializa el cliente OMS.
 
         Args:
-            url: URL del servidor WebSocket OMS.
+            url: URL del servidor WebSocket OMS (opcional, se construye desde OMS_HOST si no se proporciona).
             data_store_path: Ruta del archivo CSV donde se guardará la market data.
         """
-        self.url = url
+        # Obtener host del .env
+        oms_host = os.getenv('OMS_HOST')
+        
+        # Construir URL WebSocket
+        if url:
+            self.url = url
+        else:
+            # Asegurar que el host no tenga protocolo
+            oms_host = oms_host.replace('https://', '').replace('http://', '').replace('wss://', '').replace('ws://', '')
+            self.url = f'wss://{oms_host}'
         self.connector: Optional[OMSWebSocketConnector] = None
         self.auth = OMSAuth()
         self.token: Optional[str] = None
