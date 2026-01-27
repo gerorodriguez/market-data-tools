@@ -198,12 +198,18 @@ AAPL
 ## Estructura del proyecto
 
 ### Archivos base
-- `oms_websocket_connector.py`: Clase base para manejar conexiones WebSocket
-- `oms_auth.py`: Manejo de autenticación y obtención de tokens
+- `oms_websocket_connector.py`: Clase base para manejar conexiones WebSocket (con heartbeat)
+- `oms_auth.py`: Manejo de autenticación y obtención de tokens (con caché)
 - `oms_client.py`: Cliente principal que implementa la funcionalidad completa
 - `telegram_notifier.py`: Servicio para enviar alertas a Telegram
 - `market_data_store.py`: Utilidad para persistir datos de mercado en CSV
 - `main.py`: Archivo principal del proyecto
+
+### Mejores prácticas
+- `best_practices_config.py`: Configuración centralizada de mejores prácticas de Primary
+- `rate_limiter.py`: Rate limiting para llamadas REST según recomendaciones
+- `token_cache.py`: Caché persistente de tokens (1 request por día)
+- `.token_cache.json`: Archivo de caché (generado automáticamente, no commitear)
 
 ### Módulos de arbitraje
 - `caucion.py`: Lógica de cálculo de caución (colocadora/tomadora)
@@ -245,11 +251,45 @@ El sistema calcula automáticamente:
 
 **Condición de oportunidad:** El spread debe ser mayor al costo de la caución para que sea rentable.
 
+## Mejores Prácticas Implementadas ⭐
+
+Este proyecto implementa las **mejores prácticas oficiales de Primary/Matba Rofex** según el documento "Buenas Prácticas de Consumo en APIs de Riesgo PreTrade y Trading".
+
+📖 **Documentación completa:** Ver [MEJORES_PRACTICAS.md](MEJORES_PRACTICAS.md) y [IMPLEMENTACION_COMPLETA.md](IMPLEMENTACION_COMPLETA.md)
+
+### 🔑 Gestión de Token
+- ✅ **Caché de token**: Se solicita máximo 1 vez por día (el token expira en 24 horas)
+- ✅ **Persistencia**: El token se guarda en `.token_cache.json` para reutilizarlo entre sesiones
+- ✅ **Rate limiting**: Control automático para no exceder límites de API
+
+### 📡 WebSocket
+- ✅ **1 conexión por día**: Se mantiene una única conexión persistente
+- ✅ **Heartbeat cada 30 segundos**: Pings automáticos para mantener la conexión activa
+- ✅ **Máximo 1000 instrumentos por suscripción**: División automática en lotes
+- ✅ **Reconexión automática**: Si se pierde la conexión, intenta reconectar
+
+### ⚡ Rate Limiting
+- ✅ **Control automático**: Rate limiter implementado según las recomendaciones
+- ✅ **Espera inteligente**: Si se alcanza un límite, espera automáticamente
+- ✅ **Logging detallado**: Registra cuando se alcanzan límites
+
+### 📊 Ventajas de usar WebSocket (vs REST polling)
+- ✅ **Market data en tiempo real**: Datos instantáneos sin polling
+- ✅ **Menor carga en servidores**: Más eficiente para todos
+- ✅ **Sin límites de frecuencia**: No hay restricciones de requests/segundo
+- ✅ **Menor latencia**: Datos llegan apenas cambian
+
+### Ver resumen completo
+```bash
+python best_practices_config.py
+```
+
 ## Notas
 
-- El token se obtiene automáticamente antes de establecer la conexión WebSocket
+- El token se obtiene automáticamente y se cachea para reutilizarlo durante el día
 - El formato del header de autorización puede necesitar ajustes según la documentación de la API
 - Los mensajes recibidos se muestran en consola y se registran en los logs
 - El servidor de alertas de caución requiere las variables de entorno de Telegram configuradas
 - El scanner de arbitraje usa cooldown inteligente para evitar alertas repetitivas
 - Todos los cálculos incluyen comisiones, derechos de mercado y costos de caución
+- **Se implementan las mejores prácticas oficiales de Primary**: rate limiting, caché, heartbeat, etc.

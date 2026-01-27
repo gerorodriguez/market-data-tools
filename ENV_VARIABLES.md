@@ -94,11 +94,3 @@ MIN_PROFIT_PERCENTAGE=0.1
 ALERT_COOLDOWN_SECONDS=300
 LOG_LEVEL=INFO
 ```
-
-## Notas de Seguridad
-
-⚠️ **IMPORTANTE**: 
-- Nunca subas el archivo `.env` a un repositorio público
-- El archivo `.env` ya está incluido en `.gitignore` para proteger tus credenciales
-- Mantén tus tokens y contraseñas seguros
-- Si compartes el código, usa `.env.example` como plantilla sin valores reales

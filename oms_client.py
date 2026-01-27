@@ -120,6 +120,7 @@ class OMSClient:
     ) -> bool:
         """
         Envía una solicitud SMD (Subscription Market Data) al servidor.
+        Implementa las mejores prácticas de Primary: máximo 1000 instrumentos por mensaje.
 
         Args:
             level: Nivel de profundidad de la suscripción.
@@ -127,7 +128,7 @@ class OMSClient:
             products: Lista de productos a suscribir, cada uno con 'symbol' y 'marketId'.
 
         Returns:
-            True si el mensaje fue enviado exitosamente.
+            True si todos los mensajes fueron enviados exitosamente.
         """
         if entries is None:
             entries = ['BI', 'OF', 'EV', 'TV']
@@ -168,18 +169,56 @@ class OMSClient:
                 },
             ]
 
-        message = {
-            'type': 'smd',
-            'level': level,
-            'entries': entries,
-            'products': products,
-        }
-
         if not self.connector:
             self.logger.error('No hay conexión activa')
             return False
 
-        return await self.connector.send_message(message)
+        # Dividir en lotes de máximo 1000 instrumentos según mejores prácticas
+        max_instruments = 1000
+        total_products = len(products)
+        
+        if total_products <= max_instruments:
+            # Un solo mensaje
+            message = {
+                'type': 'smd',
+                'level': level,
+                'entries': entries,
+                'products': products,
+            }
+            return await self.connector.send_message(message)
+        
+        # Múltiples mensajes
+        self.logger.info(
+            f'Dividiendo {total_products} instrumentos en lotes de {max_instruments} '
+            f'(mejores prácticas Primary)'
+        )
+        
+        success = True
+        for i in range(0, total_products, max_instruments):
+            batch = products[i:i + max_instruments]
+            batch_num = (i // max_instruments) + 1
+            total_batches = (total_products + max_instruments - 1) // max_instruments
+            
+            self.logger.info(
+                f'Enviando lote {batch_num}/{total_batches} con {len(batch)} instrumentos'
+            )
+            
+            message = {
+                'type': 'smd',
+                'level': level,
+                'entries': entries,
+                'products': batch,
+            }
+            
+            if not await self.connector.send_message(message):
+                self.logger.error(f'Error enviando lote {batch_num}')
+                success = False
+            
+            # Pequeña pausa entre mensajes para no saturar
+            if i + max_instruments < total_products:
+                await asyncio.sleep(0.1)
+        
+        return success
     
     async def run(self, duration: int = 60):
         """

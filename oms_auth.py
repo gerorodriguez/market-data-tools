@@ -1,6 +1,7 @@
 """
 OMS Authentication
 Maneja la autenticación con el servidor OMS para obtener el token.
+Implementa las mejores prácticas de Primary: máximo 1 request por día.
 """
 import os
 import logging
@@ -8,6 +9,9 @@ from typing import Optional
 import aiohttp
 from dotenv import load_dotenv
 import pathlib
+
+from token_cache import TokenCache
+from rate_limiter import get_rate_limiter
 
 # Cargar variables de entorno desde .env
 script_dir = pathlib.Path(__file__).parent.absolute()
@@ -21,12 +25,13 @@ class OMSAuth:
     Clase para manejar la autenticación con el servidor OMS.
     """
     
-    def __init__(self, auth_url: Optional[str] = None):
+    def __init__(self, auth_url: Optional[str] = None, cache_file: str = '.token_cache.json'):
         """
         Inicializa el cliente de autenticación.
         
         Args:
             auth_url: URL del endpoint de autenticación (opcional, se construye desde OMS_HOST si no se proporciona).
+            cache_file: Archivo para caché de token (default: '.token_cache.json')
         """
         # Obtener host del .env
         oms_host = os.getenv('OMS_HOST', 'oms_host')
@@ -50,17 +55,47 @@ class OMSAuth:
             raise ValueError(
                 'Las variables OMS_USER y OMS_PASSWORD deben estar definidas en el archivo .env'
             )
+        
+        # Caché de token y rate limiter
+        self.token_cache = TokenCache(cache_file)
+        self.rate_limiter = get_rate_limiter()
     
-    async def get_token(self) -> Optional[str]:
+    async def get_token(self, force_refresh: bool = False) -> Optional[str]:
         """
         Obtiene el token de autenticación del servidor OMS.
+        Implementa las mejores prácticas de Primary: máximo 1 request por día.
         El token viene en el header X-Auth-Token de la respuesta.
+        
+        Args:
+            force_refresh: Forzar la obtención de un nuevo token (ignorar caché)
         
         Returns:
             El token de autenticación si la solicitud fue exitosa, None en caso contrario.
         """
+        # Verificar si hay un token válido en caché
+        if not force_refresh:
+            cached_token = self.token_cache.get_token()
+            if cached_token:
+                time_left = self.token_cache.get_time_until_expiration()
+                self.logger.info(
+                    f'Usando token desde caché (expira en {time_left.total_seconds() / 3600:.1f} horas)'
+                )
+                self.token = cached_token
+                return cached_token
+        
+        # Verificar rate limit
+        endpoint = '/auth/getToken'
+        if not self.rate_limiter.can_call(endpoint):
+            next_allowed = self.rate_limiter.get_next_allowed_time(endpoint)
+            self.logger.warning(
+                f'Rate limit alcanzado para {endpoint}. '
+                f'Próxima llamada permitida: {next_allowed}'
+            )
+            # Esperar si es necesario
+            await self.rate_limiter.wait_if_needed(endpoint)
+        
         try:
-            self.logger.info('Obteniendo token de autenticación...')
+            self.logger.info('Solicitando nuevo token de autenticación...')
             
             headers = {
                 'X-Username': self.username,
@@ -84,7 +119,14 @@ class OMSAuth:
                             return None
                         
                         self.token = token
-                        self.logger.info('Token obtenido exitosamente')
+                        
+                        # Guardar en caché
+                        self.token_cache.set_token(token, expires_in_hours=23)
+                        
+                        # Registrar llamada en rate limiter
+                        self.rate_limiter.record_call(endpoint)
+                        
+                        self.logger.info('✅ Token obtenido exitosamente y guardado en caché')
                         return self.token
                     else:
                         error_text = await response.text()
